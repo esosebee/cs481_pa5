@@ -1,0 +1,59 @@
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:4 + B:168 ==> 172 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:185 + B:81 ==> 266 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:190 + B:6 ==> 196 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:42 + B:77 ==> 119 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:69 + B:138 ==> 207 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:49 + B:211 ==> 260 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:0 + B:158 ==> 158 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:87 + B:66 ==> 153 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:15 + B:107 ==> 122 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:7 + B:150 ==> 157 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:125 + B:81 ==> 206 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:79 + B:63 ==> 142 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:56 + B:122 ==> 178 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:49 + B:209 ==> 258 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:14 + B:159 ==> 173 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:134 + B:3 ==> 137 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:157 + B:47 ==> 204 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:34 + B:255 ==> 289 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:154 + B:12 ==> 166 ?= 200
+
+Init balances A:100 + B:100 ==> 200!
+Let's check the balances A:162 + B:104 ==> 266 ?= 200

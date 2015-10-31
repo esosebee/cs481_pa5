@@ -5,9 +5,9 @@
 
 struct {int balance[2];} Bank={{100,100}}; //global variable defined
 
-/**********/
-/* Sem437 */
-/**********/
+/*************/
+/* Semaphore */
+/*************/
 typedef struct
 {
   int count;
@@ -45,19 +45,16 @@ void Sem437V(Sem437 *S)
   }
 }
 
-Sem437 sem;
-
 /****************/
 /* Transactions */
 /****************/
+Sem437 sem;
 
 void* MakeTransactions() //routine for thread execution
 { 
  int i, j, tmp1, tmp2, rint; 
  double dummy;
-
  Sem437P(&sem);
-
  for (i = 0; i < 100; i++) // Critical section
   { 
     rint = (rand()%30)-15;
@@ -89,13 +86,11 @@ int main(int argc, char **argv)
     perror("Error in thread creating\n"); 
     return(1); 
   }
-  
   for (i=0; i<2; i++) if (pthread_join(tid[i], (void*)&voidptr)) 
   {
     perror("Error in thread joining\n"); 
     return(1);
   }
-  
   printf("Let's check the balances A:%d + B:%d ==> %d ?= 200\n",
     Bank.balance[0],Bank.balance[1],Bank.balance[0]+Bank.balance[1]);
   return 0;

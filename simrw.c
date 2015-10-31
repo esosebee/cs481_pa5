@@ -306,7 +306,7 @@ int main(int argc, char *argv[]) {
         printf("option -M Number of threads =%d \n", numThreads);
         break;
       case 'C': maxReaders = atoi(optarg);
-        printf("option -C Max readers allowed in the room =%d\n", maxReaders);
+        printf("option -C Max readers allowed in the room =%d\n ", maxReaders);
         break;
       case 'S': randSeed = atoi(optarg);
         printf("option -S Random seed =%d \n", randSeed);
@@ -338,7 +338,7 @@ int main(int argc, char *argv[]) {
            }
        else numwk++;
        }
-    for (;i<numThreads; i++) {
+    for (;i<WORKTHREADNUM; i++) {
        workerID[i] = i;
        if (pthread_create(&work_tid[i],&attrs,Rwork,&workerID[i])) { 
            perror("Error in creating working threads:");
@@ -351,17 +351,17 @@ int main(int argc, char *argv[]) {
     if (pthread_join(arrv_tid, NULL)) {
        perror("Error in joining arrival thread:");
        }
-    for (i=0; i<numThreads; i++) if (work_tid[i]!=false)
+    for (i=0; i<WORKTHREADNUM; i++) if (work_tid[i]!=false)
        if (pthread_join(work_tid[i],NULL)) {
        perror("Error in joining working thread:");
        }
     if (GetTime()>gbVClk) gbVClk = GetTime();
     // Print Reader/Writer statistics
 
-    printf("\nSim arriv T=%d,done T=%d arrival R %d W %d process R %d W %d deny %d pending %d work thread %d\n",
+    printf("\narrvCLK: T=%d,finishCLK: T=%d, Reader/Writer Requests: R %d W %d, Requests Processed: R %d W %d, Being Denied: %d, Pending: %d, Working Threads Created: %d\n",
           timers,gbVClk,gbRnum,gbWnum,data.numR,data.numW,data.numDeny,RreqQ.len+WreqQ.len,numwk);
     // Print waiting statistics
-    printf("Waiting time in secs avg R %.1f W %.1f max R %d W %d roomMax R %d\n\n",
+    printf("Waiting time in secs avg: R %.1f W %.1f, Max Waiting Time: R %d W %d roomMax: R %d\n\n",
           1.0*data.sumRwait/data.numR,
           1.0*data.sumWwait/data.numW,
           data.maxRwait,data.maxWwait,

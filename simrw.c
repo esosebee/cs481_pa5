@@ -306,7 +306,7 @@ int main(int argc, char *argv[]) {
         printf("option -M Number of threads =%d \n", numThreads);
         break;
       case 'C': maxReaders = atoi(optarg);
-        printf("option -C Max readers allowed in the room =%d\n ", maxReaders);
+        printf("option -C Max readers allowed in the room =%d\n", maxReaders);
         break;
       case 'S': randSeed = atoi(optarg);
         printf("option -S Random seed =%d \n", randSeed);
@@ -338,7 +338,7 @@ int main(int argc, char *argv[]) {
            }
        else numwk++;
        }
-    for (;i<WORKTHREADNUM; i++) {
+    for (;i<numThreads; i++) {
        workerID[i] = i;
        if (pthread_create(&work_tid[i],&attrs,Rwork,&workerID[i])) { 
            perror("Error in creating working threads:");
@@ -351,7 +351,7 @@ int main(int argc, char *argv[]) {
     if (pthread_join(arrv_tid, NULL)) {
        perror("Error in joining arrival thread:");
        }
-    for (i=0; i<WORKTHREADNUM; i++) if (work_tid[i]!=false)
+    for (i=0; i<numThreads; i++) if (work_tid[i]!=false)
        if (pthread_join(work_tid[i],NULL)) {
        perror("Error in joining working thread:");
        }

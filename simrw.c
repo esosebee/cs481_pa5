@@ -200,17 +200,14 @@ void *RWcreate(void *vptr) {
              else if ((newptr=(P437*)malloc(sizeof(P437)))!=NULL) {
                  newptr->pID = ++gbID; newptr->RWtype=rw; 
                  newptr->arrvT = gbVClk; newptr->deptT = 0;
-                 if (rw) 
-            {QueueAppend(&WreqQ,newptr); gbWnum++;}
-                 else 
-            {QueueAppend(&RreqQ,newptr); gbRnum++;}
-                 }
-             else {data.numDeny++;}
+                 if (rw) {QueueAppend(&WreqQ,newptr); gbWnum++;}
+                 else {QueueAppend(&RreqQ,newptr); gbRnum++;}
+                 } else {data.numDeny++;}
        }
          }
       if (kk%60==0) {// display for every minute 
           printf("\nCLK %05d RoomBusy %d, waitnum R %02d W %02d, in Room R %02d W %02d pending %d\n",
-    gbVClk,gbRoomBusy,gbRwait,gbWwait,gbRcnt,gbWcnt,RreqQ.len+WreqQ.len);
+            gbVClk,gbRoomBusy,gbRwait,gbWwait,gbRcnt,gbWcnt,RreqQ.len+WreqQ.len);
           }
       // verifying R/W conditions every sec
       assert((gbRcnt==0&&gbWcnt==1) || (gbRcnt>=0&&gbWcnt==0));
@@ -322,15 +319,18 @@ int main(int argc, char *argv[]) {
      }
 
     QueueInit(&WreqQ); QueueInit(&RreqQ);
+    
     // simulate 1 hour (60 minutes), between 8:00am-9:00am
     printf("Simulating -R %2.1f/10s -W %2.1f/10s -X %03d -Y %03d -T %ds\n",
       meanR, meanW, constT2read, constT2write, timers);
+    
     // create thread, taking care of arriving
     if (pthread_create(&arrv_tid,&attrs,RWcreate, NULL)) {
        perror("Error in creating arrival thread:");
        exit(1);
        }
-    for (i=0; i<3; i++) {
+    
+    for (i=0; i<3; i++) { 
        workerID[i] = i;
        if (pthread_create(&work_tid[i],&attrs,Wwork,&workerID[i])) { 
            perror("Error in creating working threads:");
@@ -338,6 +338,7 @@ int main(int argc, char *argv[]) {
            }
        else numwk++;
        }
+    
     for (;i<numThreads; i++) {
        workerID[i] = i;
        if (pthread_create(&work_tid[i],&attrs,Rwork,&workerID[i])) { 
@@ -347,19 +348,23 @@ int main(int argc, char *argv[]) {
        else numwk++;
        }
     printf("Created %d working threads\n",numwk);
+    
     // let simulation run for timers' duration controled by arrival thread
     if (pthread_join(arrv_tid, NULL)) {
        perror("Error in joining arrival thread:");
        }
+    
     for (i=0; i<numThreads; i++) if (work_tid[i]!=false)
        if (pthread_join(work_tid[i],NULL)) {
        perror("Error in joining working thread:");
        }
+    
     if (GetTime()>gbVClk) gbVClk = GetTime();
-    // Print Reader/Writer statistics
 
-    printf("\narrvCLK: T=%d,finishCLK: T=%d, Reader/Writer Requests: R %d W %d, Requests Processed: R %d W %d, Being Denied: %d, Pending: %d, Working Threads Created: %d\n",
-          timers,gbVClk,gbRnum,gbWnum,data.numR,data.numW,data.numDeny,RreqQ.len+WreqQ.len,numwk);
+    // Print Reader/Writer statistics
+    printf("\narrvCLK: T=%d, finishCLK: T=%d, Reader/Writer Requests: R %d W %d, Requests Processed: R %d W %d, Being Denied: %d, Pending: %d, Working Threads Created: %d\n",
+        timers, gbVClk, gbRnum, gbWnum, data.numR, data.numW, data.numDeny, RreqQ.len+WreqQ.len, numwk);
+    
     // Print waiting statistics
     printf("Waiting time in secs avg: R %.1f W %.1f, Max Waiting Time: R %d W %d roomMax: R %d\n\n",
           1.0*data.sumRwait/data.numR,

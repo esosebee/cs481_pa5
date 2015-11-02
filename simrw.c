@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
     pthread_attr_init(&attrs);
     pthread_attr_setstacksize(&attrs, THREADSTACK); //using 64K stack instead of 2M
 
-    srand(437); InitTime(); // real clock, starting from 0 sec
+    InitTime(); // real clock, starting from 0 sec
     data.numR=data.numW=data.numDeny=data.sumRwait=data.sumWwait=0;
     data.maxRwait=data.maxWwait=data.roomRmax=0;
 
@@ -317,6 +317,8 @@ int main(int argc, char *argv[]) {
       default:
         fprintf(stderr, "Err: no such option:`%c'\n",optopt);
      }
+
+    srand(randSeed);
 
     QueueInit(&WreqQ); QueueInit(&RreqQ);
     

@@ -66,6 +66,7 @@ void rwV(RWLock *rwl)
   }
 }
 
+RWLock genericLock;
 RWLock rLock;
 RWLock wLock;
 
@@ -171,7 +172,8 @@ void Sleep437(long usec) { // sleep in microsec
 // Case 0
 void EnterReader0(P437 *ptr, int threadid) {
     // try to Enter the room
-    pthread_mutex_lock(&gbLock);
+    //pthread_mutex_lock(&gbLock);
+    rwP(&genericLock);
     gbRoomBusy = 1; gbRcnt=1;
     if (gbRcnt>data.roomRmax) data.roomRmax = gbRcnt;
 }
@@ -180,12 +182,14 @@ void LeaveReader0(P437 *ptr, int threadid) {
     // Leaving the Room
     gbRcnt=0;
     gbRoomBusy = 0;
-    pthread_mutex_unlock(&gbLock);
+    //pthread_mutex_unlock(&gbLock);
+    rwV(&genericLock);
 }
 
 void EnterWriter0(P437 *ptr, int threadid) {
     // try to Enter the room
-    pthread_mutex_lock(&gbLock);
+    //pthread_mutex_lock(&gbLock);
+    rwP(&genericLock);
     gbRoomBusy = 1;
     gbWcnt=1;
 }
@@ -194,7 +198,8 @@ void LeaveWriter0(P437 *ptr, int threadid) {
     // Leaving the Room
     gbWcnt=0;
     gbRoomBusy = 0;
-    pthread_mutex_unlock(&gbLock);
+    //pthread_mutex_unlock(&gbLock);
+    rwV(&genericLock);
 }
 
 // Case 1
@@ -418,6 +423,7 @@ int main(int argc, char *argv[]) {
     struct rlimit lim; // try to be able to create more threads
 
     // Initialize locks
+    rwLockInit(&genericLock, 1);
     rwLockInit(&rLock, 1);
     rwLockInit(&wLock, 1);
 

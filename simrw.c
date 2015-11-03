@@ -25,20 +25,67 @@ int RandPoisson(double mean) {
     return count;
 }
 
+
+//****************************************************************
+// Our defined lock
+//****************************************************************
+typedef struct
+{
+  int count;
+  pthread_mutex_t mutex;
+  pthread_cond_t condition;
+} RWLock;
+
+void rwLockInit(RWLock *rwl, int x)
+{
+  rwl->count = x;
+  pthread_mutex_init(&rwl->mutex, NULL);
+  pthread_cond_init(&rwl->condition, NULL);
+}
+
+void rwP(RWLock *rwl)
+{
+  pthread_mutex_trylock(&rwl->mutex);
+  while (rwl->count == 0)
+  {
+    pthread_cond_wait(&rwl->condition, &rwl->mutex);
+  }
+  rwl->count = 0;
+  pthread_mutex_unlock(&rwl->mutex);
+}
+
+void rwV(RWLock *rwl)
+{
+  int status = rwl->count;
+  pthread_mutex_lock(&rwl->mutex);
+  rwl->count = 1;
+  pthread_mutex_unlock(&rwl->mutex);
+  if (status == 0)
+  {
+    pthread_cond_signal(&rwl->condition);
+  }
+}
+
+RWLock rLock;
+RWLock wLock;
+
 //****************************************************************
 // Generic person record, for Reader(0)/Writer(1)
+//****************************************************************
 typedef struct {int arrvT, deptT, pID, RWtype;} P437;
 
 //****************************************************************
 // bookkeeping 
+//****************************************************************
 typedef struct {volatile int numDeny,numR,numW,sumRwait,sumWwait,maxRwait,maxWwait,roomRmax;} Data437;
 Data437 data;
 // Global shared data among all threads
-    volatile int gbRcnt = 0, gbWcnt=0, gbRwait=0, gbWwait=0, gbRnum=0, gbWnum=0;
-    volatile int gbID = 0, gbVClk=0, gbRoomBusy = false;
+volatile int gbRcnt = 0, gbWcnt=0, gbRwait=0, gbWwait=0, gbRnum=0, gbWnum=0;
+volatile int gbID = 0, gbVClk=0, gbRoomBusy = false;
 
 //****************************************************************
 // Queue handing
+//****************************************************************
 typedef struct {P437 *entry[MAXQLEN]; int front, rear, len; pthread_mutex_t L;} Q437;
 Q437 RreqQ, WreqQ;
 
@@ -120,24 +167,15 @@ void Sleep437(long usec) { // sleep in microsec
 //****************************************************************
 // Routines to process Read/Write
 //****************************************************************
+
+// Case 0
 void EnterReader0(P437 *ptr, int threadid) {
     // try to Enter the room
     pthread_mutex_lock(&gbLock);
     gbRoomBusy = 1; gbRcnt=1;
     if (gbRcnt>data.roomRmax) data.roomRmax = gbRcnt;
 }
-void DoReader(P437 *ptr, int threadid) {
-    int wT;
-    // Reading
-    ptr->deptT = gbVClk;
-    wT = ptr->deptT - ptr->arrvT;
-    if (wT>data.maxRwait) data.maxRwait=wT; 
-    data.numR++; data.sumRwait += wT;
-printf("T%02d @ %04d ID %03d RW %01d in room R%02d W%02d in waiting R%02d W%02d pending R %03d W %03d\n",
-threadid,gbVClk,ptr->pID,ptr->RWtype,gbRcnt,gbWcnt,gbRwait,gbWwait,RreqQ.len,WreqQ.len);
-    Sleep437(constT2read*1000); //spend X ms to read 
-    free(ptr);
-}
+
 void LeaveReader0(P437 *ptr, int threadid) {
     // Leaving the Room
     gbRcnt=0;
@@ -152,23 +190,103 @@ void EnterWriter0(P437 *ptr, int threadid) {
     gbWcnt=1;
 }
 
-void DoWriter(P437 *ptr, int threadid) {
-    int wT;
-    ptr->deptT = gbVClk;
-    wT = ptr->deptT - ptr->arrvT;
-    if (wT>data.maxWwait) data.maxWwait=wT; 
-    data.numW++; data.sumWwait += wT;
-    // Writing
-printf("T%02d @ %04d ID %03d RW %01d in room R%02d W%02d in waiting R%02d W%02d pending R %03d W %03d\n",
-threadid,gbVClk,ptr->pID,ptr->RWtype,gbRcnt,gbWcnt,gbRwait,gbWwait,RreqQ.len,WreqQ.len);
-    Sleep437(constT2write*1000); //spend X ms to cross the intersaction
-    free(ptr);
-}
 void LeaveWriter0(P437 *ptr, int threadid) {
     // Leaving the Room
     gbWcnt=0;
     gbRoomBusy = 0;
     pthread_mutex_unlock(&gbLock);
+}
+
+// Case 1
+void EnterReader1(P437 *ptr, int threadid) {
+  rwP(&rLock); 
+  gbRcnt++;
+  gbRoomBusy = 1;
+  if (gbRcnt == 1) // First reader locks the room from writers
+  {
+    rwP(&wLock);
+  }
+  rwV(&rLock);
+}
+
+void LeaveReader1(P437 *ptr, int threadid) {
+  rwP(&rLock);
+  gbRcnt--;
+  if (gbRcnt == 0)
+  {
+    gbRoomBusy = 0;
+    rwV(&wLock);
+  }
+  rwV(&rLock);
+}
+
+void EnterWriter1(P437 *ptr, int threadid) {
+  rwP(&wLock);
+}
+
+void LeaveWriter1(P437 *ptr, int threadid) {
+  rwV(&wLock);
+}
+
+// Case 2
+void EnterReader2(P437 *ptr, int threadid) {
+
+}
+
+void LeaveReader2(P437 *ptr, int threadid) {
+
+}
+
+void EnterWriter2(P437 *ptr, int threadid) {
+
+}
+
+void LeaveWriter2(P437 *ptr, int threadid) {
+
+}
+
+// Case 3
+void EnterReader3(P437 *ptr, int threadid) {
+
+}
+
+void LeaveReader3(P437 *ptr, int threadid) {
+
+}
+
+void EnterWriter3(P437 *ptr, int threadid) {
+
+}
+
+void LeaveWriter3(P437 *ptr, int threadid) {
+}
+
+// Reader/Writer
+void DoReader(P437 *ptr, int threadid) {
+    int wT;
+    // Reading
+    ptr->deptT = gbVClk;
+    wT = ptr->deptT - ptr->arrvT;
+    if (wT>data.maxRwait) data.maxRwait=wT; 
+    data.numR++; data.sumRwait += wT;
+    printf("T%02d @ %04d ID %03d RW %01d in room R%02d W%02d in waiting R%02d W%02d pending R %03d W %03d\n",
+      threadid,gbVClk,ptr->pID,ptr->RWtype,gbRcnt,gbWcnt,gbRwait,gbWwait,RreqQ.len,WreqQ.len);
+    Sleep437(constT2read*1000); //spend X ms to read 
+    free(ptr);
+}
+
+void DoWriter(P437 *ptr, int threadid) {
+    int wT;
+    ptr->deptT = gbVClk;
+    wT = ptr->deptT - ptr->arrvT;
+    if (wT>data.maxWwait) data.maxWwait=wT; 
+    // if data.
+    data.numW++; data.sumWwait += wT;
+    // Writing
+    printf("T%02d @ %04d ID %03d RW %01d in room R%02d W%02d in waiting R%02d W%02d pending R %03d W %03d\n",
+      threadid,gbVClk,ptr->pID,ptr->RWtype,gbRcnt,gbWcnt,gbRwait,gbWwait,RreqQ.len,WreqQ.len);
+    Sleep437(constT2write*1000); //spend X ms to cross the intersaction
+    free(ptr);
 }
 
 //****************************************************************
@@ -200,14 +318,17 @@ void *RWcreate(void *vptr) {
              else if ((newptr=(P437*)malloc(sizeof(P437)))!=NULL) {
                  newptr->pID = ++gbID; newptr->RWtype=rw; 
                  newptr->arrvT = gbVClk; newptr->deptT = 0;
-                 if (rw) {QueueAppend(&WreqQ,newptr); gbWnum++;}
-                 else {QueueAppend(&RreqQ,newptr); gbRnum++;}
-                 } else {data.numDeny++;}
+                 if (rw) 
+            {QueueAppend(&WreqQ,newptr); gbWnum++;}
+                 else 
+            {QueueAppend(&RreqQ,newptr); gbRnum++;}
+                 }
+             else {data.numDeny++;}
        }
          }
       if (kk%60==0) {// display for every minute 
           printf("\nCLK %05d RoomBusy %d, waitnum R %02d W %02d, in Room R %02d W %02d pending %d\n",
-            gbVClk,gbRoomBusy,gbRwait,gbWwait,gbRcnt,gbWcnt,RreqQ.len+WreqQ.len);
+    gbVClk,gbRoomBusy,gbRwait,gbWwait,gbRcnt,gbWcnt,RreqQ.len+WreqQ.len);
           }
       // verifying R/W conditions every sec
       assert((gbRcnt==0&&gbWcnt==1) || (gbRcnt>=0&&gbWcnt==0));
@@ -227,21 +348,32 @@ void *Wwork(void *ptr) {
       if (QueueEmpty(&WreqQ)==false&&(pptr=QueuePop(&WreqQ))!=NULL) {
          switch (constPriority) {
          case 0:
-             EnterWriter0(pptr,th_id);
-             DoWriter(pptr,th_id);
-             LeaveWriter0(pptr,th_id);
-             break;
+           EnterWriter0(pptr,th_id);
+           DoWriter(pptr,th_id);
+           LeaveWriter0(pptr,th_id);
+           break;
          case 1:
-             break;
+           EnterWriter1(pptr,th_id);
+           DoWriter(pptr,th_id);
+           LeaveWriter1(pptr,th_id);
+           break;
          case 2:
+            EnterWriter2(pptr, th_id);
+            DoWriter(pptr, th_id);
+            LeaveWriter2(pptr, th_id);
+            break;
          case 3:
-             break;
+            EnterWriter3(pptr, th_id);
+            DoWriter(pptr, th_id);
+            LeaveWriter3(pptr, th_id);
+            break;
          } 
          }
       while (GetTime()>(k+1)) k=GetTime(); // may work overtime, catch up
       pthread_yield();
       }
 }
+
 void *Rwork(void *ptr) {
     P437 *pptr; int k, th_id=*(int *)ptr;
     for (k=0;k<timers||QueueEmpty(&RreqQ)==false;k++) { 
@@ -250,16 +382,27 @@ void *Rwork(void *ptr) {
       if (QueueEmpty(&RreqQ)==false&&(pptr=QueuePop(&RreqQ))!=NULL) {
          switch (constPriority) {
          case 0:
-             EnterReader0(pptr,th_id);
-             DoReader(pptr,th_id);
-             LeaveReader0(pptr,th_id);
-             break;
+            EnterReader0(pptr,th_id);
+            DoReader(pptr,th_id);
+            LeaveReader0(pptr,th_id);
+            break;
          case 1:
+            EnterReader1(pptr, th_id);
+            DoReader(pptr, th_id);
+            LeaveReader1(pptr, th_id);
+            break;
          case 2:
+            EnterReader2(pptr, th_id);
+            DoReader(pptr, th_id);
+            LeaveReader2(pptr, th_id);
+            break;
          case 3:
-             break;
-         } 
-        }
+            EnterReader3(pptr, th_id);
+            DoReader(pptr, th_id);
+            LeaveReader3(pptr, th_id);
+            break;
+          } 
+      }
       while (GetTime()>(k+1)) k=GetTime(); // may work overtime, catch up
       pthread_yield();
       }
@@ -274,6 +417,10 @@ int main(int argc, char *argv[]) {
     pthread_attr_t attrs; // try to save memory by getting a smaller stack
     struct rlimit lim; // try to be able to create more threads
 
+    // Initialize locks
+    rwLockInit(&rLock, 1);
+    rwLockInit(&wLock, 1);
+
     getrlimit(RLIMIT_NPROC, &lim);
     printf("old LIMIT RLIMIT_NPROC soft %d max %d\n",lim.rlim_cur,lim.rlim_max);
     lim.rlim_cur=lim.rlim_max;
@@ -283,7 +430,7 @@ int main(int argc, char *argv[]) {
     pthread_attr_init(&attrs);
     pthread_attr_setstacksize(&attrs, THREADSTACK); //using 64K stack instead of 2M
 
-    InitTime(); // real clock, starting from 0 sec
+    srand(437); InitTime(); // real clock, starting from 0 sec
     data.numR=data.numW=data.numDeny=data.sumRwait=data.sumWwait=0;
     data.maxRwait=data.maxWwait=data.roomRmax=0;
 
@@ -318,21 +465,16 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Err: no such option:`%c'\n",optopt);
      }
 
-    srand(randSeed);
-
     QueueInit(&WreqQ); QueueInit(&RreqQ);
-    
     // simulate 1 hour (60 minutes), between 8:00am-9:00am
     printf("Simulating -R %2.1f/10s -W %2.1f/10s -X %03d -Y %03d -T %ds\n",
       meanR, meanW, constT2read, constT2write, timers);
-    
     // create thread, taking care of arriving
     if (pthread_create(&arrv_tid,&attrs,RWcreate, NULL)) {
        perror("Error in creating arrival thread:");
        exit(1);
        }
-    
-    for (i=0; i<3; i++) { 
+    for (i=0; i<3; i++) {
        workerID[i] = i;
        if (pthread_create(&work_tid[i],&attrs,Wwork,&workerID[i])) { 
            perror("Error in creating working threads:");
@@ -340,7 +482,6 @@ int main(int argc, char *argv[]) {
            }
        else numwk++;
        }
-    
     for (;i<numThreads; i++) {
        workerID[i] = i;
        if (pthread_create(&work_tid[i],&attrs,Rwork,&workerID[i])) { 
@@ -350,23 +491,19 @@ int main(int argc, char *argv[]) {
        else numwk++;
        }
     printf("Created %d working threads\n",numwk);
-    
     // let simulation run for timers' duration controled by arrival thread
     if (pthread_join(arrv_tid, NULL)) {
        perror("Error in joining arrival thread:");
        }
-    
     for (i=0; i<numThreads; i++) if (work_tid[i]!=false)
        if (pthread_join(work_tid[i],NULL)) {
        perror("Error in joining working thread:");
        }
-    
     if (GetTime()>gbVClk) gbVClk = GetTime();
-
     // Print Reader/Writer statistics
-    printf("\narrvCLK: T=%d, finishCLK: T=%d, Reader/Writer Requests: R %d W %d, Requests Processed: R %d W %d, Being Denied: %d, Pending: %d, Working Threads Created: %d\n",
-        timers, gbVClk, gbRnum, gbWnum, data.numR, data.numW, data.numDeny, RreqQ.len+WreqQ.len, numwk);
-    
+
+    printf("\narrvCLK: T=%d,finishCLK: T=%d, Reader/Writer Requests: R %d W %d, Requests Processed: R %d W %d, Being Denied: %d, Pending: %d, Working Threads Created: %d\n",
+          timers,gbVClk,gbRnum,gbWnum,data.numR,data.numW,data.numDeny,RreqQ.len+WreqQ.len,numwk);
     // Print waiting statistics
     printf("Waiting time in secs avg: R %.1f W %.1f, Max Waiting Time: R %d W %d roomMax: R %d\n\n",
           1.0*data.sumRwait/data.numR,

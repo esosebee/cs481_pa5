@@ -69,6 +69,7 @@ void rwV(RWLock *rwl)
 RWLock genericLock;
 RWLock rLock;
 RWLock wLock;
+RWLock accessLock;
 
 //****************************************************************
 // Generic person record, for Reader(0)/Writer(1)
@@ -211,6 +212,7 @@ void EnterReader1(P437 *ptr, int threadid) {
   {
     rwP(&wLock);
   }
+  if (gbRcnt > data.roomRmax) data.roomRmax = gbRcnt;  
   rwV(&rLock);
 }
 
@@ -235,19 +237,36 @@ void LeaveWriter1(P437 *ptr, int threadid) {
 
 // Case 2
 void EnterReader2(P437 *ptr, int threadid) {
-
+  rwP(&accessLock);
+  rwP(&rLock);
+  if (gbRcnt < data.roomRmax)
+  {
+    gbRcnt++;
+    rwV(&rLock);
+  }
+  if (gbRcnt == 1)
+  {
+    rwP(&wLock);
+  }
+  rwV(&accessLock);
 }
 
 void LeaveReader2(P437 *ptr, int threadid) {
-
+  gbRcnt--;
+  rwP(&rLock);
+  if (gbRcnt == 0)
+  {
+    rwV(&wLock);
+  }
+  rwV(&rLock);
 }
 
 void EnterWriter2(P437 *ptr, int threadid) {
-
+  rwP(&wLock);
 }
 
 void LeaveWriter2(P437 *ptr, int threadid) {
-
+  rwV(&wLock);
 }
 
 // Case 3
@@ -302,7 +321,7 @@ void DoWriter(P437 *ptr, int threadid) {
 void *RWcreate(void *vptr) {
     int  k,kk,i,arrivalR,arrivalW,totalArriv,rw,sumR=0,sumW=0;
     P437 *newptr;
-
+    
     for (kk=k=0;k<timers||QueueEmpty(&RreqQ)==false||QueueEmpty(&WreqQ)==false;k++,kk++) { 
       // synchronize a virtual time to wall clock with 1:1000
       while (GetTime() < kk) Sleep437(1000); // approx granularity 1 msec for 1 sec
@@ -426,6 +445,7 @@ int main(int argc, char *argv[]) {
     rwLockInit(&genericLock, 1);
     rwLockInit(&rLock, 1);
     rwLockInit(&wLock, 1);
+    rwLockInit(&accessLock, 1);
 
     getrlimit(RLIMIT_NPROC, &lim);
     printf("old LIMIT RLIMIT_NPROC soft %d max %d\n",lim.rlim_cur,lim.rlim_max);
@@ -455,7 +475,7 @@ int main(int argc, char *argv[]) {
       case 'M': numThreads = atoi(optarg);
         printf("option -M Number of threads =%d \n", numThreads);
         break;
-      case 'C': maxReaders = atoi(optarg);
+      case 'C': data.roomRmax = atoi(optarg);
         printf("option -C Max readers allowed in the room =%d\n ", maxReaders);
         break;
       case 'S': randSeed = atoi(optarg);

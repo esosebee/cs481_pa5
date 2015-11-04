@@ -281,17 +281,9 @@ void EnterReader3(P437 *ptr, int threadid) {
     rwP(&accessLock);
   }
   gbRcnt++;
+  if (gbRcnt > data.roomRmax) data.roomRmax = gbRcnt;
   rwV(&orderLock);
   rwV(&rLock);
-  // rwP(&accessLock);
-  // rwP(&rLock);
-  // gbRcnt++;
-  // if (gbRcnt == 1)
-  // {
-  //   rwP(&wLock);
-  // }
-  // rwV(&rLock);
-  // rwV(&accessLock);
 }
 
 void LeaveReader3(P437 *ptr, int threadid) {
@@ -302,27 +294,16 @@ void LeaveReader3(P437 *ptr, int threadid) {
     rwV(&accessLock);
   }
   rwV(&rLock);
-  // rwP(&accessLock);
-  // gbRcnt--;
-  // if (gbRcnt == 0)
-  // {
-  //   rwV(&wLock);
-  // }
-  // rwV(&accessLock);
 }
 
 void EnterWriter3(P437 *ptr, int threadid) {
   rwP(&orderLock);
   rwP(&accessLock);
   rwV(&orderLock);
-  // rwP(&accessLock);
-  // rwP(&wLock);
 }
 
 void LeaveWriter3(P437 *ptr, int threadid) {
   rwV(&accessLock);
-  // rwV(&accessLock);
-  // rwV(&wLock);
 }
 
 // Reader/Writer

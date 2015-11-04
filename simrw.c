@@ -70,6 +70,7 @@ RWLock genericLock;
 RWLock rLock;
 RWLock wLock;
 RWLock accessLock;
+RWLock orderLock;
 
 //****************************************************************
 // Generic person record, for Reader(0)/Writer(1)
@@ -228,10 +229,12 @@ void LeaveReader1(P437 *ptr, int threadid) {
 }
 
 void EnterWriter1(P437 *ptr, int threadid) {
+  gbWcnt++;
   rwP(&wLock);
 }
 
 void LeaveWriter1(P437 *ptr, int threadid) {
+  gbWcnt--;
   rwV(&wLock);
 }
 
@@ -271,18 +274,55 @@ void LeaveWriter2(P437 *ptr, int threadid) {
 
 // Case 3
 void EnterReader3(P437 *ptr, int threadid) {
-
+  rwP(&orderLock);
+  rwP(&rLock);
+  if (gbRcnt == 0)
+  {
+    rwP(&accessLock);
+  }
+  gbRcnt++;
+  rwV(&orderLock);
+  rwV(&rLock);
+  // rwP(&accessLock);
+  // rwP(&rLock);
+  // gbRcnt++;
+  // if (gbRcnt == 1)
+  // {
+  //   rwP(&wLock);
+  // }
+  // rwV(&rLock);
+  // rwV(&accessLock);
 }
 
 void LeaveReader3(P437 *ptr, int threadid) {
-
+  rwP(&rLock);
+  gbRcnt--;
+  if (gbRcnt == 0)
+  {
+    rwV(&accessLock);
+  }
+  rwV(&rLock);
+  // rwP(&accessLock);
+  // gbRcnt--;
+  // if (gbRcnt == 0)
+  // {
+  //   rwV(&wLock);
+  // }
+  // rwV(&accessLock);
 }
 
 void EnterWriter3(P437 *ptr, int threadid) {
-
+  rwP(&orderLock);
+  rwP(&accessLock);
+  rwV(&orderLock);
+  // rwP(&accessLock);
+  // rwP(&wLock);
 }
 
 void LeaveWriter3(P437 *ptr, int threadid) {
+  rwV(&accessLock);
+  // rwV(&accessLock);
+  // rwV(&wLock);
 }
 
 // Reader/Writer
@@ -329,8 +369,10 @@ void *RWcreate(void *vptr) {
       // display the waiting line every 10 secs, you can adjust if run for long time
       // taking care of arrival every 10 seconds
       if (k%10==0 && k<timers) { 
-          arrivalR = RandPoisson(meanR); sumR+=arrivalR;
-          arrivalW = RandPoisson(meanW); sumW+=arrivalW;
+          arrivalR = RandPoisson(meanR); 
+          sumR+=arrivalR;
+          arrivalW = RandPoisson(meanW); 
+          sumW+=arrivalW;
           totalArriv = arrivalR+arrivalW;
           for (i=0; i<totalArriv; i++) {
              if (((i%2==0)||arrivalW<=0)&&arrivalR>0) 
@@ -446,6 +488,7 @@ int main(int argc, char *argv[]) {
     rwLockInit(&rLock, 1);
     rwLockInit(&wLock, 1);
     rwLockInit(&accessLock, 1);
+    rwLockInit(&orderLock, 1);
 
     getrlimit(RLIMIT_NPROC, &lim);
     printf("old LIMIT RLIMIT_NPROC soft %d max %d\n",lim.rlim_cur,lim.rlim_max);
@@ -456,7 +499,7 @@ int main(int argc, char *argv[]) {
     pthread_attr_init(&attrs);
     pthread_attr_setstacksize(&attrs, THREADSTACK); //using 64K stack instead of 2M
 
-    srand(437); InitTime(); // real clock, starting from 0 sec
+    InitTime(); // real clock, starting from 0 sec
     data.numR=data.numW=data.numDeny=data.sumRwait=data.sumWwait=0;
     data.maxRwait=data.maxWwait=data.roomRmax=0;
 
@@ -491,6 +534,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Err: no such option:`%c'\n",optopt);
      }
 
+    srand(randSeed); 
     QueueInit(&WreqQ); QueueInit(&RreqQ);
     // simulate 1 hour (60 minutes), between 8:00am-9:00am
     printf("Simulating -R %2.1f/10s -W %2.1f/10s -X %03d -Y %03d -T %ds\n",
@@ -520,7 +564,7 @@ int main(int argc, char *argv[]) {
     // let simulation run for timers' duration controled by arrival thread
     if (pthread_join(arrv_tid, NULL)) {
        perror("Error in joining arrival thread:");
-       }
+    }
     for (i=0; i<numThreads; i++) if (work_tid[i]!=false)
        if (pthread_join(work_tid[i],NULL)) {
        perror("Error in joining working thread:");

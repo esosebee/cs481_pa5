@@ -67,10 +67,8 @@ void rwV(RWLock *rwl)
 }
 
 RWLock genericLock;
-RWLock rLock;
-RWLock wLock;
-RWLock accessLock;
-RWLock orderLock;
+RWLock rLock, wLock;
+RWLock orderLock, accessLock;
 
 //****************************************************************
 // Generic person record, for Reader(0)/Writer(1)
@@ -96,7 +94,8 @@ void QueueInit(Q437 *ptrQ) { // the Queue is initialized to be empty
      ptrQ->front = ptrQ->len = 0;
      ptrQ->rear = MAXQLEN-1;     // circular Q, FIFO
      pthread_mutex_init(&ptrQ->L,NULL);
-  }
+}
+
 Bool QueueEmpty(Q437 *ptrQ) {return (ptrQ->len==0) ? true : false; }
 Bool QueueFull(Q437 *ptrQ)  {return (ptrQ->len>=MAXQLEN) ? true : false; }
 int  QueueSize(Q437 *ptrQ) {return ptrQ->len; }
@@ -107,7 +106,8 @@ P437* QueueAppend(Q437 *ptrQ, P437 *ptrEntry) {
   if (ptrQ->len<MAXQLEN) { 
       ptrQ->len++; ptrQ->rear = (ptrQ->rear+1)%MAXQLEN;
       ptrQ->entry[ptrQ->rear] = ptrEntry;
-      }
+  }
+
   pthread_mutex_unlock(&ptrQ->L);
   return ptrEntry;
   }     
@@ -229,47 +229,26 @@ void LeaveReader1(P437 *ptr, int threadid) {
 }
 
 void EnterWriter1(P437 *ptr, int threadid) {
-  gbWcnt++;
   rwP(&wLock);
 }
 
 void LeaveWriter1(P437 *ptr, int threadid) {
-  gbWcnt--;
   rwV(&wLock);
 }
 
 // Case 2
 void EnterReader2(P437 *ptr, int threadid) {
-  rwP(&accessLock);
-  rwP(&rLock);
-  if (gbRcnt < data.roomRmax)
-  {
-    gbRcnt++;
-    rwV(&rLock);
-  }
-  if (gbRcnt == 1)
-  {
-    rwP(&wLock);
-  }
-  rwV(&accessLock);
+  
 }
 
 void LeaveReader2(P437 *ptr, int threadid) {
-  gbRcnt--;
-  rwP(&rLock);
-  if (gbRcnt == 0)
-  {
-    rwV(&wLock);
-  }
-  rwV(&rLock);
+  
 }
 
 void EnterWriter2(P437 *ptr, int threadid) {
-  rwP(&wLock);
 }
 
 void LeaveWriter2(P437 *ptr, int threadid) {
-  rwV(&wLock);
 }
 
 // Case 3
@@ -350,10 +329,8 @@ void *RWcreate(void *vptr) {
       // display the waiting line every 10 secs, you can adjust if run for long time
       // taking care of arrival every 10 seconds
       if (k%10==0 && k<timers) { 
-          arrivalR = RandPoisson(meanR); 
-          sumR+=arrivalR;
-          arrivalW = RandPoisson(meanW); 
-          sumW+=arrivalW;
+          arrivalR = RandPoisson(meanR); sumR+=arrivalR;
+          arrivalW = RandPoisson(meanW); sumW+=arrivalW;
           totalArriv = arrivalR+arrivalW;
           for (i=0; i<totalArriv; i++) {
              if (((i%2==0)||arrivalW<=0)&&arrivalR>0) 
@@ -545,7 +522,7 @@ int main(int argc, char *argv[]) {
     // let simulation run for timers' duration controled by arrival thread
     if (pthread_join(arrv_tid, NULL)) {
        perror("Error in joining arrival thread:");
-    }
+       }
     for (i=0; i<numThreads; i++) if (work_tid[i]!=false)
        if (pthread_join(work_tid[i],NULL)) {
        perror("Error in joining working thread:");
@@ -562,4 +539,3 @@ int main(int argc, char *argv[]) {
           data.maxRwait,data.maxWwait,
           data.roomRmax);
 }
- 

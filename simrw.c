@@ -8,7 +8,7 @@
 #include <assert.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-// INT_MAX in limits.h, "const int INT_MAX = 0x7FFFFFFF;"
+
 typedef enum {true=1, false=0} Bool;
 #define MAXQLEN 200
 #define WORKTHREADNUM 17
@@ -25,7 +25,6 @@ int RandPoisson(double mean) {
     return count;
 }
 
-
 //****************************************************************
 // bookkeeping 
 //****************************************************************
@@ -36,48 +35,33 @@ volatile int gbRcnt = 0, gbWcnt=0, gbRwait=0, gbWwait=0, gbRnum=0, gbWnum=0;
 volatile int gbID = 0, gbVClk=0, gbRoomBusy = false;
 
 //****************************************************************
-// Our defined lock
+// Our defined semaphores
 //****************************************************************
 typedef struct
 {
-  int count;
+  // If rwlock > 0: lock readers
+  //    rlock < 0: lock writers
+  //    rlock == 0: don't lock  
   int rwlock; 
+  int count;
+
   pthread_mutex_t mutex;
   pthread_cond_t condition;
-  pthread_cond_t readers_ok;
-  unsigned int waiting_writers;
-  pthread_cond_t writer_ok;
+  pthread_cond_t start_readers; // Start waiting readers
+  pthread_cond_t start_writer; // Start a waiting writer
+  unsigned int waiting_writers; // Number of writers waiting in queue
 } RWLock;
-
 
 void rwLockInit(RWLock *rwl, int x)
 {
-  rwl->count = x;
+  rwl->count = x; 
   pthread_mutex_init(&rwl->mutex, NULL);
   pthread_cond_init(&rwl->condition, NULL);
   rwl->rwlock = 0;
   rwl->waiting_writers = 0;
 }
 
-// typedef struct {
-//     pthread_mutex_t m; /* read/write monitor lock */
-//     int rwlock;
-//     /* >0=# rdrs, <0=wrtr, 0=none */
-//     pthread_cond_t readers_ok;  /*start waiting readers 
-//     unsigned int waiting_writers; /* # of waiting writers */
-//     pthread_cond_t writer_ok; /* start a waiting writer */
-// } rwl_t;
-
-// void
-// rwl_init(rwl_t *rwlp)
-// {
-//     pthread_mutex_init(&rwlp->m, NULL);
-//     pthread_cond_init(&rwlp->readers_ok,  NULL);
-//     pthread_cond_init(&rwlp->writer_ok,  NULL);
-//     rwlp->rwlock = 0;
-//     rwlp->waiting_writers = 0;
-// }
-
+/* Regular lock/unlock mechanisms */
 void rwP(RWLock *rwl)
 {
   pthread_mutex_trylock(&rwl->mutex);
@@ -101,82 +85,70 @@ void rwV(RWLock *rwl)
   }
 }
 
-/***************/
-/* CHANGE THIS SHIT1!KLJ;LKFJSL */
-
-
-void rwl_rdlock2(RWLock *rwl)
+/* Locks that keep track of how many readers/writers are waiting */
+void countingRLock(RWLock *rwl)
 {
-    pthread_mutex_lock(&rwl->mutex);
-    while (rwl->rwlock < 0 || gbRcnt == data.roomRmax)
-    {
-        gbRwait++; // Increment the number of waiting readers in the queue
-        pthread_cond_wait(&rwl->readers_ok, &rwl->mutex);
-        gbRwait--; // Decrement the number of waiting readers in the queue
-    }
+  pthread_mutex_lock(&rwl->mutex);
+  while (rwl->rwlock < 0 || gbRcnt == data.roomRmax)
+  {
+      gbRwait++; // Increment the number of waiting readers in the queue
+      pthread_cond_wait(&rwl->start_readers, &rwl->mutex);
+      gbRwait--; // Decrement the number of waiting readers in the queue
+  }
 
-    // Set room to busy and increment the number of readers in the room
-    gbRoomBusy = 1; gbRcnt++;
-    rwl->rwlock++;
-    pthread_mutex_unlock(&rwl->mutex);
+  // Set room to busy and increment the number of readers in the room
+  gbRoomBusy = 1; gbRcnt++;
+  rwl->rwlock++;
+  pthread_mutex_unlock(&rwl->mutex);
 }
 
-void rwl_wrlock(rwl_t *rwlp)
+void countingWLock(RWLock *rwl)
 {
-    pthread_mutex_lock(&rwlp->m);
-    while (rwlp->rwlock != 0 || gbRwait != 0) {
-        rwlp->waiting_writers++;
-        gbWwait++;  // Increment the number of writers waiting in the queue
-        pthread_cond_wait(&rwlp->writer_ok, &rwlp->m);
-        rwlp->waiting_writers--;
-        gbWwait--; // Decrement the number of writers in the queue
-    }
+  pthread_mutex_lock(&rwl->mutex);
+  while (rwl->rwlock != 0 || gbRwait != 0) 
+  {
+    rwl->waiting_writers++;
+    gbWwait++;  // Increment the number of writers waiting in the queue
+    pthread_cond_wait(&rwl->start_writer, &rwl->mutex);
+    rwl->waiting_writers--;
+    gbWwait--; // Decrement the number of writers in the queue
+  }
 
-    // Set room to busy for writer and increment the number of writers in room
-    gbRoomBusy = 1;
-    gbWcnt++;
-    rwlp->rwlock = -1;
-    pthread_mutex_unlock(&rwlp->m);
+  gbRoomBusy = 1; // Room is busy for writer
+  gbWcnt++; // Number of writers trying to access the room
+  rwl->rwlock = -1;
+  pthread_mutex_unlock(&rwl->mutex);
 }
 
-void
-rwl_unlock(rwl_t *rwlp)
+void countingUnlock(RWLock *rwl)
 {
-    int ww, wr;
+  int wWriter, wReader;
+  pthread_mutex_lock(&rwl->mutex);
+  if (rwl->rwlock < 0) // Locked for writing
+  {
+    rwl->rwlock = 0;
+    gbWcnt--;
+    gbRoomBusy = 0;
+  }
+  else
+  {
+    rwl->rwlock--;
+    gbRcnt--;
+    if (gbRcnt == 0) gbRoomBusy = 0;
+  }
 
-    pthread_mutex_lock(&rwlp->m);
-    if (rwlp->rwlock < 0) /* rwlock < 0 if locked for writing */
-    {
-        rwlp->rwlock = 0;
-        gbWcnt--;
-        gbRoomBusy = 0;
-    }
-    else
-    {
-        rwlp->rwlock--;
-        gbRcnt--;
-        if (gbRcnt == 0) gbRoomBusy = 0;
-    }
-    /*
-     * Keep flags that show if there are waiting readers or writers so
-     * that we can wake them up outside the monitor lock.
-     */
-    ww = (rwlp->waiting_writers && rwlp->rwlock == 0);
-    wr = (rwlp->waiting_writers == 0);
-    pthread_mutex_unlock(&rwlp->m);
+  // Keep track of waiting readers and waiting writers
+  wWriter = (rwl->waiting_writers && rwl->rwlock == 0);
+  wReader = (rwl->waiting_writers == 0);
+  pthread_mutex_unlock(&rwl->mutex);
 
-    //Prioritizes readers for 2b (Case A) and 2c (Case B)
-        if (gbRwait)
-            pthread_cond_broadcast(&rwlp->readers_ok);
-        else if (gbWwait)
-            pthread_cond_signal(&rwlp->writer_ok);
+  //Prioritize readers
+  if (gbRwait) pthread_cond_broadcast(&rwl->start_readers);
 }
 
 RWLock genericLock;
 RWLock rLock, wLock;
 RWLock orderLock, accessLock;
-// RWLock myLock;
-rwl_t myLock;
 
 //****************************************************************
 // Generic person record, for Reader(0)/Writer(1)
@@ -333,20 +305,19 @@ void LeaveWriter1(P437 *ptr, int threadid) {
 
 // Case 2
 void EnterReader2(P437 *ptr, int threadid) {
-    // try to Enter the room
-    rwl_rdlock2(&myLock);
+  countingRLock(&genericLock);
 }
 
 void LeaveReader2(P437 *ptr, int threadid) {
-      rwl_unlock(&myLock);
+  countingUnlock(&genericLock);
 }
 
 void EnterWriter2(P437 *ptr, int threadid) {
-  rwl_wrlock(&myLock);
+  countingWLock(&genericLock);
 }
 
 void LeaveWriter2(P437 *ptr, int threadid) {
-  rwl_unlock(&myLock);
+  countingUnlock(&genericLock);
 }
 
 // Case 3

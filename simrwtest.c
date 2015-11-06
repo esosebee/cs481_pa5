@@ -127,7 +127,7 @@ rwl_rdlock(rwl_t *rwlp)
  * of the room is met, then readers will wait.
  */
 void
-rwl_rdlock2(rwl_t *rwlp)
+countingRLock(rwl_t *rwlp)
 {
     pthread_mutex_lock(&rwlp->m);
     while (rwlp->rwlock < 0 || gbRcnt == data.roomRmax)
@@ -346,7 +346,7 @@ void EnterReader1(P437 *ptr, int threadid) {
 
 void EnterReader2(P437 *ptr, int threadid) {
     // try to Enter the room
-    rwl_rdlock2(&myLock);
+    countingRLock(&myLock);
 }
 
 void EnterReader3(P437 *ptr, int threadid) {

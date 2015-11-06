@@ -27,21 +27,56 @@ int RandPoisson(double mean) {
 
 
 //****************************************************************
+// bookkeeping 
+//****************************************************************
+typedef struct {volatile int numDeny,numR,numW,sumRwait,sumWwait,maxRwait,maxWwait,roomRmax;} Data437;
+Data437 data;
+// Global shared data among all threads
+volatile int gbRcnt = 0, gbWcnt=0, gbRwait=0, gbWwait=0, gbRnum=0, gbWnum=0;
+volatile int gbID = 0, gbVClk=0, gbRoomBusy = false;
+
+//****************************************************************
 // Our defined lock
 //****************************************************************
 typedef struct
 {
   int count;
+  int rwlock; 
   pthread_mutex_t mutex;
   pthread_cond_t condition;
+  pthread_cond_t readers_ok;
+  unsigned int waiting_writers;
+  pthread_cond_t writer_ok;
 } RWLock;
+
 
 void rwLockInit(RWLock *rwl, int x)
 {
   rwl->count = x;
   pthread_mutex_init(&rwl->mutex, NULL);
   pthread_cond_init(&rwl->condition, NULL);
+  rwl->rwlock = 0;
+  rwl->waiting_writers = 0;
 }
+
+// typedef struct {
+//     pthread_mutex_t m; /* read/write monitor lock */
+//     int rwlock;
+//     /* >0=# rdrs, <0=wrtr, 0=none */
+//     pthread_cond_t readers_ok;  /*start waiting readers 
+//     unsigned int waiting_writers; /* # of waiting writers */
+//     pthread_cond_t writer_ok; /* start a waiting writer */
+// } rwl_t;
+
+// void
+// rwl_init(rwl_t *rwlp)
+// {
+//     pthread_mutex_init(&rwlp->m, NULL);
+//     pthread_cond_init(&rwlp->readers_ok,  NULL);
+//     pthread_cond_init(&rwlp->writer_ok,  NULL);
+//     rwlp->rwlock = 0;
+//     rwlp->waiting_writers = 0;
+// }
 
 void rwP(RWLock *rwl)
 {
@@ -66,23 +101,87 @@ void rwV(RWLock *rwl)
   }
 }
 
+/***************/
+/* CHANGE THIS SHIT1!KLJ;LKFJSL */
+
+
+void rwl_rdlock2(RWLock *rwl)
+{
+    pthread_mutex_lock(&rwl->mutex);
+    while (rwl->rwlock < 0 || gbRcnt == data.roomRmax)
+    {
+        gbRwait++; // Increment the number of waiting readers in the queue
+        pthread_cond_wait(&rwl->readers_ok, &rwl->mutex);
+        gbRwait--; // Decrement the number of waiting readers in the queue
+    }
+
+    // Set room to busy and increment the number of readers in the room
+    gbRoomBusy = 1; gbRcnt++;
+    rwl->rwlock++;
+    pthread_mutex_unlock(&rwl->mutex);
+}
+
+void rwl_wrlock(rwl_t *rwlp)
+{
+    pthread_mutex_lock(&rwlp->m);
+    while (rwlp->rwlock != 0 || gbRwait != 0) {
+        rwlp->waiting_writers++;
+        gbWwait++;  // Increment the number of writers waiting in the queue
+        pthread_cond_wait(&rwlp->writer_ok, &rwlp->m);
+        rwlp->waiting_writers--;
+        gbWwait--; // Decrement the number of writers in the queue
+    }
+
+    // Set room to busy for writer and increment the number of writers in room
+    gbRoomBusy = 1;
+    gbWcnt++;
+    rwlp->rwlock = -1;
+    pthread_mutex_unlock(&rwlp->m);
+}
+
+void
+rwl_unlock(rwl_t *rwlp)
+{
+    int ww, wr;
+
+    pthread_mutex_lock(&rwlp->m);
+    if (rwlp->rwlock < 0) /* rwlock < 0 if locked for writing */
+    {
+        rwlp->rwlock = 0;
+        gbWcnt--;
+        gbRoomBusy = 0;
+    }
+    else
+    {
+        rwlp->rwlock--;
+        gbRcnt--;
+        if (gbRcnt == 0) gbRoomBusy = 0;
+    }
+    /*
+     * Keep flags that show if there are waiting readers or writers so
+     * that we can wake them up outside the monitor lock.
+     */
+    ww = (rwlp->waiting_writers && rwlp->rwlock == 0);
+    wr = (rwlp->waiting_writers == 0);
+    pthread_mutex_unlock(&rwlp->m);
+
+    //Prioritizes readers for 2b (Case A) and 2c (Case B)
+        if (gbRwait)
+            pthread_cond_broadcast(&rwlp->readers_ok);
+        else if (gbWwait)
+            pthread_cond_signal(&rwlp->writer_ok);
+}
+
 RWLock genericLock;
 RWLock rLock, wLock;
 RWLock orderLock, accessLock;
+// RWLock myLock;
+rwl_t myLock;
 
 //****************************************************************
 // Generic person record, for Reader(0)/Writer(1)
 //****************************************************************
 typedef struct {int arrvT, deptT, pID, RWtype;} P437;
-
-//****************************************************************
-// bookkeeping 
-//****************************************************************
-typedef struct {volatile int numDeny,numR,numW,sumRwait,sumWwait,maxRwait,maxWwait,roomRmax;} Data437;
-Data437 data;
-// Global shared data among all threads
-volatile int gbRcnt = 0, gbWcnt=0, gbRwait=0, gbWwait=0, gbRnum=0, gbWnum=0;
-volatile int gbID = 0, gbVClk=0, gbRoomBusy = false;
 
 //****************************************************************
 // Queue handing
@@ -174,7 +273,6 @@ void Sleep437(long usec) { // sleep in microsec
 // Case 0
 void EnterReader0(P437 *ptr, int threadid) {
     // try to Enter the room
-    //pthread_mutex_lock(&gbLock);
     rwP(&genericLock);
     gbRoomBusy = 1; gbRcnt=1;
     if (gbRcnt>data.roomRmax) data.roomRmax = gbRcnt;
@@ -184,13 +282,11 @@ void LeaveReader0(P437 *ptr, int threadid) {
     // Leaving the Room
     gbRcnt=0;
     gbRoomBusy = 0;
-    //pthread_mutex_unlock(&gbLock);
     rwV(&genericLock);
 }
 
 void EnterWriter0(P437 *ptr, int threadid) {
     // try to Enter the room
-    //pthread_mutex_lock(&gbLock);
     rwP(&genericLock);
     gbRoomBusy = 1;
     gbWcnt=1;
@@ -200,7 +296,6 @@ void LeaveWriter0(P437 *ptr, int threadid) {
     // Leaving the Room
     gbWcnt=0;
     gbRoomBusy = 0;
-    //pthread_mutex_unlock(&gbLock);
     rwV(&genericLock);
 }
 
@@ -238,17 +333,20 @@ void LeaveWriter1(P437 *ptr, int threadid) {
 
 // Case 2
 void EnterReader2(P437 *ptr, int threadid) {
-  
+    // try to Enter the room
+    rwl_rdlock2(&myLock);
 }
 
 void LeaveReader2(P437 *ptr, int threadid) {
-  
+      rwl_unlock(&myLock);
 }
 
 void EnterWriter2(P437 *ptr, int threadid) {
+  rwl_wrlock(&myLock);
 }
 
 void LeaveWriter2(P437 *ptr, int threadid) {
+  rwl_unlock(&myLock);
 }
 
 // Case 3
@@ -447,6 +545,7 @@ int main(int argc, char *argv[]) {
     rwLockInit(&wLock, 1);
     rwLockInit(&accessLock, 1);
     rwLockInit(&orderLock, 1);
+    rwl_init(&myLock);
 
     getrlimit(RLIMIT_NPROC, &lim);
     printf("old LIMIT RLIMIT_NPROC soft %d max %d\n",lim.rlim_cur,lim.rlim_max);
@@ -528,8 +627,8 @@ int main(int argc, char *argv[]) {
        perror("Error in joining working thread:");
        }
     if (GetTime()>gbVClk) gbVClk = GetTime();
+    
     // Print Reader/Writer statistics
-
     printf("\narrvCLK: T=%d,finishCLK: T=%d, Reader/Writer Requests: R %d W %d, Requests Processed: R %d W %d, Being Denied: %d, Pending: %d, Working Threads Created: %d\n",
           timers,gbVClk,gbRnum,gbWnum,data.numR,data.numW,data.numDeny,RreqQ.len+WreqQ.len,numwk);
     // Print waiting statistics
